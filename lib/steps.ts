@@ -43,7 +43,7 @@ export const SELECTORS = {
 };
 
 /** Bumped whenever these steps change, so the log shows which code is live. */
-export const STEPS_VERSION = "steps-4";
+export const STEPS_VERSION = "steps-5";
 
 export const HOME_URL = "https://www.qrcode-tiger.com/";
 export const LOGIN_URL = "https://www.qrcode-tiger.com/login";
@@ -228,6 +228,38 @@ async function bytesFromPage(page: Page): Promise<Buffer | null> {
   return Buffer.from(await response.body());
 }
 
+/** What a person would see right now — used to explain a step that found nothing. */
+async function describeScreen(page: Page): Promise<string> {
+  const parts = await page
+    .evaluate(() => {
+      const clean = (value: string) => value.replace(/\s+/g, " ").trim().slice(0, 220);
+      const modal = document.querySelector(".MuiModal-root, [role='dialog']");
+      const inputs = Array.from(document.querySelectorAll("input"))
+        .filter((input) => (input as HTMLInputElement).type !== "hidden")
+        .map((input) => (input as HTMLInputElement).placeholder || (input as HTMLInputElement).name)
+        .filter(Boolean)
+        .slice(0, 12);
+      const buttons = Array.from(document.querySelectorAll("button"))
+        .map((button) => clean(button.textContent ?? ""))
+        .filter(Boolean)
+        .slice(0, 12);
+      return {
+        url: location.href,
+        modal: modal ? clean((modal as HTMLElement).innerText ?? "") : "",
+        inputs,
+        buttons,
+      };
+    })
+    .catch(() => null);
+
+  if (!parts) return "";
+  const bits = [`at ${parts.url}`];
+  if (parts.modal) bits.push(`dialog says "${parts.modal}"`);
+  if (parts.inputs.length) bits.push(`inputs: ${parts.inputs.join(", ")}`);
+  if (parts.buttons.length) bits.push(`buttons: ${parts.buttons.join(" | ")}`);
+  return bits.join(" — ");
+}
+
 /**
  * Get rid of any dialog sitting over the form.
  *
@@ -280,13 +312,13 @@ async function dismissOverlays(page: Page): Promise<string | null> {
   await wait(600);
   if (!(await present())) return text;
 
-  // Last resort: move the overlay out of the way rather than answer it.
+  // Last resort: make the backdrop harmless without touching the dialog itself.
+  // Removing these nodes breaks React's modal container, and the site reuses it
+  // for the naming dialog after Generate — which then never appears.
   await page
     .evaluate(() => {
-      for (const node of Array.from(
-        document.querySelectorAll(".MuiModal-root, .MuiBackdrop-root"),
-      )) {
-        node.remove();
+      for (const node of Array.from(document.querySelectorAll(".MuiBackdrop-root"))) {
+        (node as HTMLElement).style.pointerEvents = "none";
       }
       document.body.style.overflow = "";
       document.body.style.paddingRight = "";
@@ -458,26 +490,36 @@ export async function generateOne(
       15000,
     );
     if (template) {
-      await template.scrollIntoViewIfNeeded();
+      await template.scrollIntoViewIfNeeded().catch(() => {});
       await template.click({ force: true });
       await wait(800);
     }
   }
 
   const qrName = fillTemplate(type.qrNameTemplate, row);
-  const nameBox = await firstVisible(page, SELECTORS.qrName, 20000);
-  if (!nameBox) throw new Error("The 'Name your QR Code' box never appeared.");
-  await dismissOverlays(page);
+
+  // Generating a dynamic code can take a while, and the naming box only shows up
+  // once it is done. Do not touch any dialog here — this step lives inside one.
+  const nameBox = await firstVisible(page, SELECTORS.qrName, 45000);
+  if (!nameBox) {
+    throw new Error(
+      "The 'Name your QR Code' box never appeared after Generate. " +
+        (await describeScreen(page)),
+    );
+  }
   await nameBox.fill(qrName, { timeout: 8000 }).catch(async () => {
     await nameBox.type(qrName, { delay: TYPE_DELAY });
   });
   await wait(400);
 
-  const button = await firstVisible(page, SELECTORS.download, 15000);
-  if (!button) throw new Error("The green Download button never appeared.");
+  const button = await firstVisible(page, SELECTORS.download, 20000);
+  if (!button) {
+    throw new Error(
+      "The green Download button never appeared. " + (await describeScreen(page)),
+    );
+  }
 
   downloads.length = 0;
-  await dismissOverlays(page);
   await button.scrollIntoViewIfNeeded().catch(() => {});
   await button.click({ force: true });
 
