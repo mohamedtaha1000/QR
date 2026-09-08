@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { onServerless, openBrowser } from "@/lib/browser";
-import { HOME_URL, isLoggedOut, signIn, wait } from "@/lib/steps";
+import { HOME_URL, isLoggedOut, signIn, STEPS_VERSION, wait } from "@/lib/steps";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -78,7 +78,12 @@ export async function POST(request: Request) {
 
     // A profile-backed browser remembers the login itself.
     const state = session.usesProfile ? null : await session.context.storageState();
-    return NextResponse.json({ ok: true, session: state, usesProfile: session.usesProfile });
+    return NextResponse.json({
+      ok: true,
+      session: state,
+      usesProfile: session.usesProfile,
+      version: STEPS_VERSION,
+    });
   } catch (error) {
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Sign-in failed." },

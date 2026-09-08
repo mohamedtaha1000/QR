@@ -76,7 +76,7 @@ export function useRunner(typeId: "vcard" | "id") {
           return false;
         }
         session.current = data.session;
-        note("Signed in");
+        note(`Signed in · ${data.version ?? "unknown build"}`);
         return true;
       } catch {
         setMessage("Could not reach the server to sign in.");

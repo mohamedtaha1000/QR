@@ -42,6 +42,9 @@ export const SELECTORS = {
   ],
 };
 
+/** Bumped whenever these steps change, so the log shows which code is live. */
+export const STEPS_VERSION = "steps-4";
+
 export const HOME_URL = "https://www.qrcode-tiger.com/";
 export const LOGIN_URL = "https://www.qrcode-tiger.com/login";
 
@@ -73,9 +76,45 @@ async function fillField(
     if (required) throw new Error(`The ${label} field was not on the page`);
     return;
   }
-  await field.click();
-  await field.fill("");
-  await field.type(value, { delay: TYPE_DELAY });
+
+  // fill() sets the value and fires the input/change events React listens for,
+  // and unlike click() it does not hit-test — so a dialog's backdrop sitting
+  // over the form cannot block it. Clicking here was what timed out.
+  try {
+    await field.fill(value, { timeout: 8000 });
+    return;
+  } catch {
+    /* fall through to setting it by hand */
+  }
+
+  await dismissOverlays(page);
+  try {
+    await field.fill(value, { timeout: 8000 });
+    return;
+  } catch {
+    /* fall through */
+  }
+
+  // Last resort: drive the input directly. React tracks its own value, so the
+  // native setter has to be used or the change is ignored.
+  const ok = await field
+    .evaluate((element, text) => {
+      const input = element as HTMLInputElement;
+      const setter = Object.getOwnPropertyDescriptor(
+        window.HTMLInputElement.prototype,
+        "value",
+      )?.set;
+      if (!setter) return false;
+      setter.call(input, text);
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      return input.value === text;
+    }, value)
+    .catch(() => false);
+
+  if (!ok && required) {
+    throw new Error(`Could not type into the ${label} field.`);
+  }
 }
 
 export async function isLoggedOut(page: Page): Promise<boolean> {
@@ -190,6 +229,75 @@ async function bytesFromPage(page: Page): Promise<Buffer | null> {
 }
 
 /**
+ * Get rid of any dialog sitting over the form.
+ *
+ * After signing in, QR Tiger can throw up a Material-UI modal — onboarding, an
+ * upsell, a notice. Its backdrop swallows every click, so filling the form times
+ * out with "subtree intercepts pointer events".
+ *
+ * Dismissals here are deliberately non-committal: a close button, Escape, or
+ * removing the overlay from the DOM. It never clicks anything that would accept
+ * terms or agree to something on your behalf — that is not a decision for a
+ * script to make.
+ *
+ * Returns the dialog's text, so a later failure can mention what appeared.
+ */
+async function dismissOverlays(page: Page): Promise<string | null> {
+  const present = async () =>
+    (await page.locator(".MuiModal-root, .MuiBackdrop-root").count().catch(() => 0)) > 0;
+
+  if (!(await present())) return null;
+
+  const text =
+    (await page.locator(".MuiModal-root").first().innerText().catch(() => ""))
+      ?.replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 300) || null;
+
+  const closers = [
+    '.MuiModal-root [aria-label="close"]',
+    '.MuiModal-root [aria-label="Close"]',
+    ".MuiModal-root .qr-close",
+    ".MuiModal-root .circle-delete",
+    '.MuiModal-root button:has-text("Close")',
+    '.MuiModal-root button:has-text("Skip")',
+    '.MuiModal-root button:has-text("Not now")',
+    '.MuiModal-root button:has-text("Maybe later")',
+    '.MuiModal-root button:has-text("No thanks")',
+    '.MuiModal-root button:has-text("Dismiss")',
+  ];
+
+  for (const selector of closers) {
+    const closer = page.locator(selector).first();
+    if (await closer.count().catch(() => 0)) {
+      await closer.click({ timeout: 2500 }).catch(() => {});
+      await wait(600);
+      if (!(await present())) return text;
+    }
+  }
+
+  await page.keyboard.press("Escape").catch(() => {});
+  await wait(600);
+  if (!(await present())) return text;
+
+  // Last resort: move the overlay out of the way rather than answer it.
+  await page
+    .evaluate(() => {
+      for (const node of Array.from(
+        document.querySelectorAll(".MuiModal-root, .MuiBackdrop-root"),
+      )) {
+        node.remove();
+      }
+      document.body.style.overflow = "";
+      document.body.style.paddingRight = "";
+      document.body.removeAttribute("aria-hidden");
+    })
+    .catch(() => {});
+  await wait(400);
+  return text;
+}
+
+/**
  * Click "Generate dynamic QR code".
  *
  * The button ships disabled and only enables once the form satisfies the site's
@@ -230,7 +338,7 @@ async function clickGenerate(page: Page): Promise<void> {
     );
   }
 
-  await button.click();
+  await button.click({ force: true });
   await wait(2500);
 }
 
@@ -252,8 +360,8 @@ async function selectTheme(page: Page, value: string): Promise<void> {
   await slide.scrollIntoViewIfNeeded().catch(() => {});
 
   const attempts: Array<() => Promise<unknown>> = [
-    () => slide.locator("img").first().click({ timeout: 4000 }),
-    () => slide.click({ timeout: 4000 }),
+    () => slide.locator("img").first().click({ timeout: 4000, force: true }),
+    () => slide.click({ timeout: 4000, force: true }),
     () => radio.evaluate((element) => (element as HTMLElement).click()),
     () => radio.check({ force: true, timeout: 4000 }),
   ];
@@ -315,6 +423,8 @@ export async function generateOne(
     throw new Error("The vCard form never appeared.");
   }
 
+  await dismissOverlays(page);
+
   await selectTheme(page, type.themeValue);
 
   await fillField(page, SELECTORS.name, row.displayName, "name", true);
@@ -330,13 +440,12 @@ export async function generateOne(
 
   const colorBox = await firstVisible(page, SELECTORS.color, 6000);
   if (colorBox) {
-    await colorBox.click();
-    await colorBox.fill("");
-    await colorBox.type(type.color, { delay: TYPE_DELAY });
-    await colorBox.press("Enter");
+    await colorBox.fill(type.color, { timeout: 8000 }).catch(() => {});
+    await colorBox.press("Enter").catch(() => {});
     await wait(300);
   }
 
+  await dismissOverlays(page);
   await clickGenerate(page);
 
   if (type.designTemplateFragment) {
@@ -350,7 +459,7 @@ export async function generateOne(
     );
     if (template) {
       await template.scrollIntoViewIfNeeded();
-      await template.click();
+      await template.click({ force: true });
       await wait(800);
     }
   }
@@ -358,17 +467,19 @@ export async function generateOne(
   const qrName = fillTemplate(type.qrNameTemplate, row);
   const nameBox = await firstVisible(page, SELECTORS.qrName, 20000);
   if (!nameBox) throw new Error("The 'Name your QR Code' box never appeared.");
-  await nameBox.click();
-  await nameBox.fill("");
-  await nameBox.type(qrName, { delay: TYPE_DELAY });
+  await dismissOverlays(page);
+  await nameBox.fill(qrName, { timeout: 8000 }).catch(async () => {
+    await nameBox.type(qrName, { delay: TYPE_DELAY });
+  });
   await wait(400);
 
   const button = await firstVisible(page, SELECTORS.download, 15000);
   if (!button) throw new Error("The green Download button never appeared.");
 
   downloads.length = 0;
-  await button.scrollIntoViewIfNeeded();
-  await button.click();
+  await dismissOverlays(page);
+  await button.scrollIntoViewIfNeeded().catch(() => {});
+  await button.click({ force: true });
 
   const deadline = Date.now() + 75000;
   while (downloads.length === 0 && Date.now() < deadline) await wait(250);
