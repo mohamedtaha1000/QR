@@ -189,6 +189,46 @@ async function bytesFromPage(page: Page): Promise<Buffer | null> {
   return Buffer.from(await response.body());
 }
 
+/**
+ * Pick the vCard layout template.
+ *
+ * The radio itself is visually hidden inside the slide, so Playwright's own
+ * check() refuses it ("clicking the checkbox did not change its state"). What a
+ * person actually clicks is the preview image. Try that first, then the slide,
+ * then a real DOM click on the input — React listens for that — and only give
+ * up once none of them has left the radio checked.
+ */
+async function selectTheme(page: Page, value: string): Promise<void> {
+  const radio = page.locator(`input[name="Vcard_theme"][value="${value}"]`).first();
+  if (!(await radio.count())) return;
+  if (await radio.isChecked().catch(() => false)) return;
+
+  const slide = radio.locator("xpath=..");
+  await slide.scrollIntoViewIfNeeded().catch(() => {});
+
+  const attempts: Array<() => Promise<unknown>> = [
+    () => slide.locator("img").first().click({ timeout: 4000 }),
+    () => slide.click({ timeout: 4000 }),
+    () => radio.evaluate((element) => (element as HTMLElement).click()),
+    () => radio.check({ force: true, timeout: 4000 }),
+  ];
+
+  for (const attempt of attempts) {
+    try {
+      await attempt();
+    } catch {
+      /* try the next approach */
+    }
+    await wait(500);
+    if (await radio.isChecked().catch(() => false)) return;
+  }
+
+  throw new Error(
+    `Could not select vCard template ${value} — the template picker markup has ` +
+      "probably changed. Check SELECTORS in lib/steps.ts.",
+  );
+}
+
 export interface GeneratedQr {
   bytes: Buffer;
   fileName: string;
@@ -230,12 +270,7 @@ export async function generateOne(
     throw new Error("The vCard form never appeared.");
   }
 
-  const radio = page.locator(`input[name="Vcard_theme"][value="${type.themeValue}"]`).first();
-  if (await radio.count()) {
-    const container = radio.locator("xpath=..");
-    await container.scrollIntoViewIfNeeded().catch(() => {});
-    await container.click({ timeout: 5000 }).catch(() => radio.check({ force: true }));
-  }
+  await selectTheme(page, type.themeValue);
 
   await fillField(page, SELECTORS.name, row.displayName, "name", true);
   await fillField(page, SELECTORS.company, STM.company, "company");
