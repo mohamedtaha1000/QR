@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { onServerless, openBrowser } from "@/lib/browser";
 import { HOME_URL, isLoggedOut, signIn, STEPS_VERSION, wait } from "@/lib/steps";
+import { QR_TYPES } from "@/lib/qrTypes";
 
 export const runtime = "nodejs";
 export const maxDuration = 300;
@@ -74,6 +75,27 @@ export async function POST(request: Request) {
       } else {
         await signIn(page);
       }
+    }
+
+    // Signing in on the home page is not proof: check the generator itself,
+    // which is where an unauthenticated session shows the free-trial dialog.
+    await page.goto(QR_TYPES.vcard.url, {
+      waitUntil: "domcontentloaded",
+      timeout: 60000,
+    });
+    await wait(2500);
+    if (await isLoggedOut(page)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          error:
+            "Signed in, but the vCard generator still treats this as a visitor and " +
+            "offers a free trial instead of the naming and Download steps. Check " +
+            "that the account is the one with the vCard plan, and that it has not " +
+            "run out of dynamic QR codes.",
+        },
+        { status: 403 },
+      );
     }
 
     // A profile-backed browser remembers the login itself.

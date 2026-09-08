@@ -27,7 +27,17 @@ export const SELECTORS = {
     ".btn-download button.btn-success",
     'button.btn-success:has-text("Download")',
   ],
-  loginMarkers: ['input[type="password"]', 'button:has-text("Log in")'],
+  // What the site shows a visitor it does not consider signed in. The password
+  // box alone is not enough — the signed-out home page has none, which is why a
+  // missing login used to read as success.
+  loginMarkers: [
+    'input[type="password"]',
+    'button:has-text("Log in")',
+    'a[href*="/login"]:visible',
+    'button:has-text("Register your Free Trial Account")',
+    'button:has-text("Register your Free Trial")',
+    ':is(a, button):has-text("Sign up"):visible',
+  ],
   loginEmail: [
     'input[name="email"]',
     'input[type="email"]',
@@ -43,7 +53,7 @@ export const SELECTORS = {
 };
 
 /** Bumped whenever these steps change, so the log shows which code is live. */
-export const STEPS_VERSION = "steps-5";
+export const STEPS_VERSION = "steps-6";
 
 export const HOME_URL = "https://www.qrcode-tiger.com/";
 export const LOGIN_URL = "https://www.qrcode-tiger.com/login";
@@ -176,8 +186,10 @@ export async function signIn(page: Page): Promise<void> {
     if (!(await isLoggedOut(page))) return;
   }
   throw new Error(
-    "Signing in did not go through — the password may be wrong, or the account " +
-      "is asking for a code or a captcha that only a person can answer.",
+    "Signing in did not go through. QR Tiger is still treating this as a visitor " +
+      "rather than your account. Either QRTIGER_EMAIL / QRTIGER_PASSWORD are wrong, " +
+      "or the account wants a verification code or captcha that only a person can " +
+      "answer. " + (await describeScreen(page)),
   );
 }
 
@@ -443,7 +455,11 @@ export async function generateOne(
   await wait(1200);
 
   if (await isLoggedOut(page)) {
-    const error = new Error("Signed out");
+    const error = new Error(
+      "QR Tiger is treating this session as signed out — it is offering a free " +
+        "trial rather than the naming and Download steps, which only a signed-in " +
+        "account gets. " + (await describeScreen(page)),
+    );
     (error as Error & { needsSession?: boolean }).needsSession = true;
     throw error;
   }
