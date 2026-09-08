@@ -72,9 +72,10 @@ Or push the folder to GitHub and import it at vercel.com — same thing with a U
    Without it, the build tries to download a 150 MB browser it will not use.
 3. **A paid plan, probably.** Free functions cap at 5 minutes each, which is
    plenty per person. But cold starts add 5–10 seconds to a request, and Pro
-   gives 2 GB of memory, which Chromium wants.
+   gives more memory, which Chromium wants.
 
-`vercel.json` already asks for 2 GB and a 300-second ceiling per request.
+Each API route sets its own ceiling with `export const maxDuration = 300`, so
+there is no `vercel.json` to keep in sync.
 
 ### Before you deploy, check one thing
 
