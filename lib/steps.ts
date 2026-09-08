@@ -53,7 +53,7 @@ export const SELECTORS = {
 };
 
 /** Bumped whenever these steps change, so the log shows which code is live. */
-export const STEPS_VERSION = "steps-6";
+export const STEPS_VERSION = "steps-7";
 
 export const HOME_URL = "https://www.qrcode-tiger.com/";
 export const LOGIN_URL = "https://www.qrcode-tiger.com/login";
@@ -178,18 +178,28 @@ export async function signIn(page: Page): Promise<void> {
 
   const submit = await firstVisible(page, SELECTORS.loginSubmit, 5000);
   if (!submit) throw new Error("No sign-in button was found on the login page.");
-  await submit.click();
+  await submit.click({ force: true });
+
+  // Read the page's own complaint straight away — it disappears once the site
+  // redirects, and it is the only thing that says *why* a login was refused.
+  await wait(3500);
+  const complaint = await readComplaints(page);
+  const landedOn = page.url();
 
   const deadline = Date.now() + 30000;
   while (Date.now() < deadline) {
-    await wait(1500);
     if (!(await isLoggedOut(page))) return;
+    await wait(1500);
   }
+
   throw new Error(
-    "Signing in did not go through. QR Tiger is still treating this as a visitor " +
-      "rather than your account. Either QRTIGER_EMAIL / QRTIGER_PASSWORD are wrong, " +
-      "or the account wants a verification code or captcha that only a person can " +
-      "answer. " + (await describeScreen(page)),
+    "QR Tiger refused the sign-in" +
+      (complaint ? `: "${complaint}"` : "") +
+      `. It sent the browser to ${landedOn} as a visitor. ` +
+      "Check that QRTIGER_EMAIL and QRTIGER_PASSWORD in the Vercel project match " +
+      "the account you sign in with by hand — and that the account does not need " +
+      "a code or captcha, which no script can answer. " +
+      (await describeScreen(page)),
   );
 }
 
@@ -238,6 +248,34 @@ async function bytesFromPage(page: Page): Promise<Buffer | null> {
   const response = await page.context().request.get(src, { timeout: 30000 });
   if (!response.ok()) return null;
   return Buffer.from(await response.body());
+}
+
+/** Whatever the page is complaining about — validation text, alerts, toasts. */
+async function readComplaints(page: Page): Promise<string> {
+  return page
+    .evaluate(() => {
+      const selectors = [
+        ".invalid-feedback",
+        ".error",
+        ".errors",
+        ".error-message",
+        ".alert",
+        ".alert-danger",
+        '[role="alert"]',
+        ".Toastify__toast",
+        ".MuiAlert-message",
+        '[class*="error" i]',
+      ].join(", ");
+      const seen = new Set<string>();
+      for (const element of Array.from(document.querySelectorAll(selectors))) {
+        const text = ((element as HTMLElement).innerText ?? "")
+          .replace(/\s+/g, " ")
+          .trim();
+        if (text && text.length > 2 && text.length < 200) seen.add(text);
+      }
+      return Array.from(seen).slice(0, 3).join(" / ");
+    })
+    .catch(() => "");
 }
 
 /** What a person would see right now — used to explain a step that found nothing. */
