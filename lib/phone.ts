@@ -12,9 +12,3 @@ export function normalizePhone(raw: string): string {
   if (phone.startsWith("0")) return "+2" + phone;
   return "+20" + phone;
 }
-
-/** Excel turns 01001234567 into a number and eats the leading zero. */
-export function lostLeadingZero(raw: string): boolean {
-  const digits = String(raw ?? "").replace(/\D/g, "");
-  return digits.length === 10 && digits.startsWith("1");
-}

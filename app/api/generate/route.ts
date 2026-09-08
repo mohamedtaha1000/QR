@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { launchBrowser } from "@/lib/browser";
+import { onServerless, openBrowser } from "@/lib/browser";
 import { generateOne } from "@/lib/steps";
 import { QR_TYPES } from "@/lib/qrTypes";
 import type { GenerateRequest } from "@/lib/runTypes";
@@ -23,21 +23,14 @@ export async function POST(request: Request) {
       { status: 400 },
     );
   }
-  if (!body.session) {
+  // On Vercel the login only exists in the passed state; locally it is on disk.
+  if (onServerless && !body.session) {
     return NextResponse.json({ ok: false, needsSession: true }, { status: 401 });
   }
 
-  const browser = await launchBrowser();
+  const session = await openBrowser(body.session);
   try {
-    const context = await browser.newContext({
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      storageState: body.session as any,
-      viewport: { width: 1440, height: 950 },
-      acceptDownloads: true,
-    });
-
-    const result = await generateOne(context, type, body.values);
-
+    const result = await generateOne(session.context, type, body.values);
     return NextResponse.json({
       ok: true,
       fileName: result.fileName,
@@ -46,9 +39,7 @@ export async function POST(request: Request) {
       image: result.bytes.toString("base64"),
     });
   } catch (error) {
-    const needsSession = Boolean(
-      (error as Error & { needsSession?: boolean })?.needsSession,
-    );
+    const needsSession = Boolean((error as Error & { needsSession?: boolean })?.needsSession);
     return NextResponse.json(
       {
         ok: false,
@@ -58,6 +49,6 @@ export async function POST(request: Request) {
       { status: needsSession ? 401 : 500 },
     );
   } finally {
-    await browser.close().catch(() => {});
+    await session.close();
   }
 }

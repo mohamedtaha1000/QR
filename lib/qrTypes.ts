@@ -10,9 +10,10 @@ export interface ColumnSpec {
   key: FieldKey;
   label: string;
   aliases: string[];
+  /** The sheet must have this column in its header row. All of them do. */
   required?: boolean;
-  /** Shown as a warning (not an error) when the cell is empty. */
-  warnIfEmpty?: boolean;
+  /** A row is unusable without a value here. Only the name qualifies. */
+  valueRequired?: boolean;
 }
 
 export interface QrTypeDef {
@@ -32,25 +33,31 @@ export interface QrTypeDef {
 }
 
 const SHARED_COLUMNS: ColumnSpec[] = [
-  { key: "no", label: "NO", aliases: ["no", "number", "#", "sn", "serial"] },
-  { key: "code", label: "Code", aliases: ["code", "empcode", "employeecode", "id", "idcode"] },
+  { key: "no", label: "NO", required: true, aliases: ["no", "number", "#", "sn", "serial"] },
   {
-    key: "displayName", label: "Display Name", required: true,
+    key: "code", label: "Code", required: true,
+    aliases: ["code", "empcode", "employeecode", "id", "idcode"],
+  },
+  {
+    key: "displayName", label: "Display Name", required: true, valueRequired: true,
     aliases: ["displayname", "name", "fullname", "displayedname"],
   },
   {
-    key: "mobile", label: "Mobile", warnIfEmpty: true,
+    key: "mobile", label: "Mobile", required: true,
     aliases: ["mobile", "phone", "mobilenumber", "phonenumber", "cell"],
   },
   {
-    key: "jobTitle", label: "Job Title", warnIfEmpty: true,
+    key: "jobTitle", label: "Job Title", required: true,
     aliases: ["jobtitle", "title", "position", "job"],
   },
   {
-    key: "email", label: "Email", warnIfEmpty: true,
+    key: "email", label: "Email", required: true,
     aliases: ["email", "mail", "emailaddress"],
   },
-  { key: "comments", label: "Comments", aliases: ["comments", "comment", "notes", "note", "remarks"] },
+  {
+    key: "comments", label: "Comments", required: true,
+    aliases: ["comments", "comment", "notes", "note", "remarks"],
+  },
 ];
 
 export const STM = {

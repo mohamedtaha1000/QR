@@ -77,6 +77,8 @@ function Wizard() {
               sourceName={runner.sourceName}
               startedAt={runner.startedAt}
               finishedAt={runner.finishedAt}
+              message={runner.message}
+              log={runner.log}
               onSaveOne={runner.saveOne}
               onSaveZip={runner.saveZip}
               onNewBatch={() => {

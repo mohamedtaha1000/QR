@@ -95,10 +95,31 @@ export async function signIn(page: Page): Promise<void> {
   await page.goto(LOGIN_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
   await wait(1500);
 
-  const emailBox = await firstVisible(page, SELECTORS.loginEmail, 10000);
-  const passwordBox = await firstVisible(page, SELECTORS.loginPassword, 10000);
+  let emailBox = await firstVisible(page, SELECTORS.loginEmail, 8000);
+  let passwordBox = await firstVisible(page, SELECTORS.loginPassword, 4000);
+
+  // /login did not give us a form — try reaching it from the home page instead.
   if (!emailBox || !passwordBox) {
-    throw new Error("The QR Tiger login form did not look as expected.");
+    await page.goto(HOME_URL, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await wait(1200);
+    const link = await firstVisible(
+      page,
+      ['a[href*="/login"]', 'button:has-text("Log in")', 'a:has-text("Log in")'],
+      5000,
+    );
+    if (link) {
+      await link.click().catch(() => {});
+      await wait(2000);
+    }
+    emailBox = await firstVisible(page, SELECTORS.loginEmail, 8000);
+    passwordBox = await firstVisible(page, SELECTORS.loginPassword, 4000);
+  }
+
+  if (!emailBox || !passwordBox) {
+    throw new Error(
+      "Could not find the email and password boxes on the QR Tiger login page. " +
+        "Sign in by hand once in the browser window — the profile remembers it.",
+    );
   }
 
   await emailBox.click();

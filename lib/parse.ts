@@ -1,6 +1,6 @@
 import ExcelJS from "exceljs";
 import { ColumnSpec, FieldKey, QrTypeDef } from "./qrTypes";
-import { lostLeadingZero, normalizePhone } from "./phone";
+import { normalizePhone } from "./phone";
 
 export interface ParsedRow {
   rowNumber: number;
@@ -136,8 +136,9 @@ export async function parseSheet(
   const missing = mapped.filter((m) => m.spec.required && m.index === -1);
   if (missing.length) {
     throw new Error(
-      `Could not find the ${missing.map((m) => m.spec.label).join(", ")} column. ` +
-        `Headers seen: ${headers.filter(Boolean).join(", ")}`,
+      `The sheet is missing ${missing.length === 1 ? "this column" : "these columns"}: ` +
+        `${missing.map((m) => m.spec.label).join(", ")}. ` +
+        `Headers found: ${headers.filter(Boolean).join(", ")}`,
     );
   }
 
@@ -154,20 +155,9 @@ export async function parseSheet(
 
     const issues: Issue[] = [];
     for (const { spec } of mapped) {
-      const value = values[spec.key];
-      if (spec.required && !value) {
+      if (spec.valueRequired && !values[spec.key]) {
         issues.push({ level: "error", message: `${spec.label} is empty` });
-      } else if (spec.warnIfEmpty && !value) {
-        issues.push({ level: "warning", message: `${spec.label} is empty` });
       }
-    }
-    if (values.mobile && lostLeadingZero(values.mobile)) {
-      issues.push({
-        level: "warning",
-        message:
-          "Mobile lost its leading 0 in Excel — the +20 rule still builds the " +
-          "right number, worth a glance though",
-      });
     }
     if (values.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(values.email)) {
       issues.push({ level: "warning", message: "Email does not look like an address" });

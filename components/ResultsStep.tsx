@@ -9,13 +9,15 @@ interface Props {
   sourceName: string;
   startedAt: number | null;
   finishedAt: number | null;
+  message: string;
+  log: { at: number; text: string }[];
   onSaveOne: (row: RunRow) => void;
   onSaveZip: () => void;
   onNewBatch: () => void;
 }
 
 export default function ResultsStep(props: Props) {
-  const { rows, sourceName, startedAt, finishedAt } = props;
+  const { rows, sourceName, startedAt, finishedAt, message, log } = props;
   const done = rows.filter((r) => r.status === "done");
   const failed = rows.filter((r) => r.status === "failed");
   const skipped = rows.filter((r) => r.status === "skipped");
@@ -34,11 +36,21 @@ export default function ResultsStep(props: Props) {
     return map;
   }, [rows]);
 
+  const quote = (cell: unknown) => `"${String(cell).replace(/"/g, '""')}"`;
   const csv = [
     ["row", "code", "name", "qr name", "status", "detail", "file"].join(","),
     ...rows.map((r) =>
       [r.rowNumber, r.code, r.displayName, r.qrName, r.status, r.detail, r.fileName ?? ""]
-        .map((cell) => `"${String(cell).replace(/"/g, '""')}"`)
+        .map(quote)
+        .join(","),
+    ),
+    "",
+    "# run notes",
+    ...(message ? [["", "", "", "", "run", message, ""].map(quote).join(",")] : []),
+    // The activity log is what explains a batch that never started.
+    ...log.map((entry) =>
+      ["", "", "", "", "log", `${new Date(entry.at).toISOString()} ${entry.text}`, ""]
+        .map(quote)
         .join(","),
     ),
   ].join("\n");
@@ -46,6 +58,22 @@ export default function ResultsStep(props: Props) {
 
   return (
     <>
+      {message && (
+        <div className="banner danger" style={{ marginBottom: 20 }}>
+          <span style={{ color: "var(--danger)", display: "flex", marginTop: 1 }}>
+            <AlertIcon size={18} />
+          </span>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: "var(--danger)" }}>
+              This batch did not run
+            </div>
+            <div className="small ink2" style={{ marginTop: 4, lineHeight: 1.6 }}>
+              {message}
+            </div>
+          </div>
+        </div>
+      )}
+
       <div className="between" style={{ alignItems: "flex-start", marginBottom: 24, gap: 24 }}>
         <div>
           <div className="row" style={{ alignItems: "baseline", gap: 10 }}>

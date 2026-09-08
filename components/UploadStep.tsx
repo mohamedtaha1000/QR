@@ -197,10 +197,7 @@ export default function UploadStep({ typeId, parsed, file, onParsed, onNext }: P
                 <span style={{ color: entry.column ? "var(--ok)" : "var(--muted)", display: "flex" }}>
                   {entry.column ? <CheckIcon size={14} /> : <XIcon size={14} />}
                 </span>
-                <span style={{ flex: 1, fontSize: 13 }}>
-                  {entry.label}
-                  {!entry.required && <span className="tiny muted"> optional</span>}
-                </span>
+                <span style={{ flex: 1, fontSize: 13 }}>{entry.label}</span>
                 <span
                   className="mono tag"
                   style={{ color: entry.column ? "var(--ink)" : "var(--muted)" }}
@@ -211,10 +208,14 @@ export default function UploadStep({ typeId, parsed, file, onParsed, onNext }: P
             ))}
             <div
               className="small ink2"
-              style={{ marginTop: 14, background: "var(--bg)", borderRadius: 8, padding: 12, lineHeight: 1.55 }}
+              style={{
+                marginTop: 14, background: "var(--bg)", borderRadius: 8,
+                padding: 12, lineHeight: 1.55,
+              }}
             >
-              <strong>Tip.</strong> Format the Mobile column as <em>Text</em> in Excel —
-              otherwise the leading 0 is dropped before upload.
+              All seven columns must be present in the header row. Empty cells are
+              fine except the name — mobile numbers are normalised to{" "}
+              <span className="mono tiny">+20…</span> whichever way Excel stored them.
             </div>
           </div>
         </div>
