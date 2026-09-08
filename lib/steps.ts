@@ -190,6 +190,51 @@ async function bytesFromPage(page: Page): Promise<Buffer | null> {
 }
 
 /**
+ * Click "Generate dynamic QR code".
+ *
+ * The button ships disabled and only enables once the form satisfies the site's
+ * own validation, so clicking it blind does nothing and every later step fails
+ * looking for a result that was never produced. Wait for it to enable, and say
+ * what is wrong if it never does.
+ */
+async function clickGenerate(page: Page): Promise<void> {
+  const button = await firstVisible(page, SELECTORS.generate, 15000);
+  if (!button) throw new Error("The 'Generate dynamic QR code' button was not found.");
+
+  await button.scrollIntoViewIfNeeded().catch(() => {});
+
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    const disabled = await button
+      .evaluate((element) => {
+        const target = element as HTMLButtonElement;
+        return target.disabled || target.classList.contains("disabled");
+      })
+      .catch(() => true);
+    if (!disabled) break;
+    await wait(500);
+  }
+
+  const stillDisabled = await button
+    .evaluate((element) => {
+      const target = element as HTMLButtonElement;
+      return target.disabled || target.classList.contains("disabled");
+    })
+    .catch(() => false);
+
+  if (stillDisabled) {
+    throw new Error(
+      "The Generate button stayed disabled, so the site considers the form " +
+        "incomplete — usually a missing name, a phone number it will not accept, " +
+        "or a template that was never selected.",
+    );
+  }
+
+  await button.click();
+  await wait(2500);
+}
+
+/**
  * Pick the vCard layout template.
  *
  * The radio itself is visually hidden inside the slide, so Playwright's own
@@ -292,10 +337,7 @@ export async function generateOne(
     await wait(300);
   }
 
-  const generate = await firstVisible(page, SELECTORS.generate, 15000);
-  if (!generate) throw new Error("The 'Generate dynamic QR code' button was not found.");
-  await generate.click();
-  await wait(2500);
+  await clickGenerate(page);
 
   if (type.designTemplateFragment) {
     const template = await firstVisible(
